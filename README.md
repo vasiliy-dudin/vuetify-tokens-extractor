@@ -6,6 +6,8 @@ Extracts Vuetify component styles (padding, radius, fonts, colours, sizes, state
 
 Run this from inside (or against) a project that has `vuetify` installed and built — the tool resolves the `vuetify` package via Node module resolution, the same way `import 'vuetify'` would from that project. `vuetify` is a `peerDependency` (`>=3.0.0`) of this package, not a bundled dependency: it always uses *your* installed version, never one it brings itself.
 
+**Build `vuetify` before running this tool.** The tool reads `<vuetify>/dist/vuetify.css` (and `dist/vuetify-labs.css`), which only exist after `vuetify`'s own build step has run (e.g. `pnpm build` / `npm run build` in the Vuetify checkout, or a fresh `npm install` for a published package that ships prebuilt `dist/`). Without that build, the CSS files are missing or stale and extraction fails or produces incomplete/empty output.
+
 This package is not published to the npm registry — it's only available on GitHub, and only tested with pnpm.
 
 ## Quick start
