@@ -97,7 +97,10 @@ export async function run (argv, { cwd = process.cwd() } = {}) {
       themeVars,
       propDefaults: componentDefaults(themeData?.defaults, name),
     })
-    if (json.$meta.warning) warnings.push(`${name}: ${json.$meta.warning}`)
+    if (json.$meta.warning) {
+      warnings.push(`${name}: ${json.$meta.warning}`)
+      continue
+    }
     written.push(writeJson(values.out, `${name}.json`, json))
   }
 
