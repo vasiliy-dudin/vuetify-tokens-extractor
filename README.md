@@ -4,16 +4,26 @@ Extracts Vuetify component styles (padding, radius, fonts, colours, sizes, state
 
 ## Requirements
 
-Run this from inside (or against) a project that has `vuetify` installed and built — the tool resolves the `vuetify` package via Node module resolution, the same way `import 'vuetify'` would from that project.
+Run this from inside (or against) a project that has `vuetify` installed and built — the tool resolves the `vuetify` package via Node module resolution, the same way `import 'vuetify'` would from that project. `vuetify` is a `peerDependency` (`>=3.0.0`) of this package, not a bundled dependency: it always uses *your* installed version, never one it brings itself.
+
+This package is not published to the npm registry — it's only available on GitHub, and only tested with pnpm.
 
 ## Quick start
 
+Add it as a devDependency, pinned to a tag:
+
 ```bash
-npx vuetify-tokens-extractor VBtn VChip
-npx vuetify-tokens-extractor --all
+pnpm add -D github:vasiliy-dudin/vuetify-tokens-extractor#v0.1.0
 ```
 
-Run it from the project whose Vuetify build you want to inspect (`cwd` is where `vuetify` gets resolved from). Output is written to `style-tokens/` in that directory — one JSON per component, plus `_theme.json` with theme colours and variables.
+Then run it from the project whose Vuetify build you want to inspect (`cwd` is where `vuetify` gets resolved from):
+
+```bash
+pnpm exec vuetify-tokens-extractor VBtn VChip
+pnpm exec vuetify-tokens-extractor --all
+```
+
+Output is written to `style-tokens/` in that directory — one JSON per component, plus `_theme.json` with theme colours and variables.
 
 ## Output format
 
@@ -65,27 +75,16 @@ Theme colours and interaction-state opacities (`--v-theme-*`, `--v-hover-opacity
 If `vuetify` isn't an installed dependency in the usual `node_modules` sense (e.g. you're running this against the Vuetify repository itself), point at it explicitly:
 
 ```bash
-npx vuetify-tokens-extractor VBtn --vuetify-root path/to/packages/vuetify
+pnpm exec vuetify-tokens-extractor VBtn --vuetify-root path/to/packages/vuetify
 ```
 
-## Consuming this package as a pinned dependency
+## Upgrading
 
-Add it as a git dependency pinned to a tag, so upgrading is a version bump rather than a manual copy:
-
-```json
-{
-  "devDependencies": {
-    "vuetify-tokens-extractor": "github:<you>/vuetify-tokens-extractor#v0.1.0"
-  }
-}
-```
+Pinning to a tag (as in [Quick start](#quick-start)) means upgrading is a version bump, not a manual copy: edit the `#v0.1.0` ref in `package.json` to the new tag, then reinstall:
 
 ```bash
 pnpm install
-pnpm exec vuetify-tokens-extractor VBtn --vuetify-options ./vuetify-tokens.config.mjs
 ```
-
-Bumping to a new release is then just editing the tag in `package.json` and reinstalling.
 
 ## How it works
 
