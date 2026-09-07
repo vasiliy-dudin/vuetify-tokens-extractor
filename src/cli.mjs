@@ -5,7 +5,7 @@ import { loadComponentIndex, resolveComponents } from './components.mjs'
 import { buildCompactJson } from './condense.mjs'
 import { extractComponent, findRelatedBases, parseCssFiles } from './parser.mjs'
 import { buildComponentJson, writeJson } from './serialize.mjs'
-import { buildThemeJson, componentDefaults, generateTheme } from './theme.mjs'
+import { buildThemeJson, componentDefaults, DEFAULT_THEME_SOURCE, defaultsWarningDetails, generateTheme, THEME_DEFAULTS_NOTE } from './theme.mjs'
 import { readVuetifyVersion, resolveVuetifyRoot } from './vuetify-root.mjs'
 
 function parseCliArgs (argv, cwd) {
@@ -79,6 +79,10 @@ export async function run (argv, { cwd = process.cwd() } = {}) {
   }
   if (themeData) meta.defaultTheme = themeData.defaultThemeName
 
+  // Recorded in every file's $meta, not just _theme.json: the warning belongs where the wrong values are.
+  const usedDefaultTheme = themeData?.source === DEFAULT_THEME_SOURCE
+  if (usedDefaultTheme) meta.themeWarning = THEME_DEFAULTS_NOTE
+
   const written = []
   const warnings = []
   for (const { name, classBase } of components) {
@@ -105,9 +109,16 @@ export async function run (argv, { cwd = process.cwd() } = {}) {
   }
 
   if (themeData) {
-    written.push(writeJson(values.out, '_theme.json', buildThemeJson(themeData, { vuetifyVersion: meta.vuetifyVersion })))
+    const themeMeta = { vuetifyVersion: meta.vuetifyVersion }
+    if (usedDefaultTheme) themeMeta.themeWarning = THEME_DEFAULTS_NOTE
+    written.push(writeJson(values.out, '_theme.json', buildThemeJson(themeData, themeMeta)))
   }
 
   for (const warning of warnings) console.error(`warning: ${warning}`)
+  // Printed last so it survives the per-component warning flood that --all produces.
+  if (usedDefaultTheme) {
+    console.error(`warning: ${THEME_DEFAULTS_NOTE}`)
+    for (const line of defaultsWarningDetails(themeData)) console.error(line)
+  }
   console.log(`Wrote ${written.length} file(s) to ${path.relative(cwd, values.out) || values.out}`)
 }

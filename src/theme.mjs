@@ -1,9 +1,17 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import postcss from 'postcss'
 import { pathToFileURL } from 'node:url'
 import { requireFromVuetify } from './vuetify-root.mjs'
 
 const BLUEPRINT_NAMES = ['md1', 'md2', 'md3']
+
+/** `themeData.source` value meaning no theme input was given, so Vuetify's own defaults were used. */
+export const DEFAULT_THEME_SOURCE = 'defaults'
+
+/** Recorded in `$meta.themeWarning` so the JSON explains itself without access to the CLI's stderr. */
+export const THEME_DEFAULTS_NOTE =
+  'Theme values are Vuetify built-in defaults; they do not reflect the createVuetify() options of this project.'
 
 /** Parses a theme stylesheet into Map<themeName, Map<'--v-*', value>>. */
 export function parseThemeCss (cssText) {
@@ -35,11 +43,47 @@ async function importVuetify (vuetifyRoot) {
   }
 }
 
+const TS_EXTENSIONS = new Set(['.ts', '.mts', '.cts'])
+
+const OPTIONS_FILE_HINT =
+  'The options file must be plain data with no framework imports. Importing "vuetify/styles", ' +
+  '"vuetify/components/*" or "@vuetify/one", or relying on bundler auto-imports such as h() or camelize(), ' +
+  'cannot work here: Node has no Vite transform and no CSS loader. ' +
+  'Extract just the theme into a standalone data module and point this file at that.'
+
+/** Imports a createVuetify options file. TypeScript goes through jiti, everything else through Node. */
+async function importOptionsFile (optionsFile) {
+  const href = pathToFileURL(optionsFile).href
+  if (!TS_EXTENSIONS.has(path.extname(optionsFile).toLowerCase())) {
+    return await import(href)
+  }
+
+  let createJiti
+  try {
+    ({ createJiti } = await import('jiti'))
+  } catch (error) {
+    throw new Error(
+      `Cannot load the TypeScript options file ${optionsFile}: the "jiti" dependency is missing. ` +
+      'Reinstall the dependencies of this package, or pass a .mjs options file instead.\n' +
+      `Original error: ${error.message}`
+    )
+  }
+
+  try {
+    return await createJiti(import.meta.url).import(href)
+  } catch (error) {
+    throw new Error(
+      `Cannot load the options file ${optionsFile}.\n` + OPTIONS_FILE_HINT + '\n' +
+      `Original error: ${error.message}`
+    )
+  }
+}
+
 async function loadOptions ({ blueprintName, optionsFile }) {
   let options = {}
-  let source = 'defaults'
+  let source = DEFAULT_THEME_SOURCE
   if (optionsFile) {
-    const imported = await import(pathToFileURL(optionsFile).href)
+    const imported = await importOptionsFile(optionsFile)
     options = imported.default ?? imported
     source = `options:${optionsFile}`
   }
@@ -90,6 +134,16 @@ export async function generateTheme ({ vuetifyRoot, blueprintName, optionsFile, 
     defaults: app.defaults.value,
     defaultThemeName: typeof options.theme?.defaultTheme === 'string' ? options.theme.defaultTheme : 'light',
   }
+}
+
+/** Extra stderr lines for the defaults fallback: the primary colour used, and how to fix it. */
+export function defaultsWarningDetails (themeData) {
+  const primary = themeData.themes?.[themeData.defaultThemeName]?.colors?.primary
+  return [
+    ...(primary ? [`  Resolved "${themeData.defaultThemeName}" primary: ${primary}`] : []),
+    '  Fix: --vuetify-options <file> | --blueprint md1|md2|md3 | --theme-css <file>',
+    '  Silence: --no-theme (leaves var() references unresolved)',
+  ]
 }
 
 /** Resolved prop defaults for one component: global defaults merged with component-specific ones. */

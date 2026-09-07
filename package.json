@@ -1,6 +1,6 @@
 {
   "name": "vuetify-tokens-extractor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Extracts Vuetify component styles (padding, radius, fonts, colours, sizes, states) from compiled CSS into JSON, one file per component.",
   "type": "module",
@@ -22,6 +22,7 @@
     "extract": "node bin/extract-style-tokens.mjs"
   },
   "dependencies": {
+    "jiti": "^2.7.0",
     "postcss": "^8.5.19"
   },
   "peerDependencies": {
