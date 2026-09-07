@@ -17,10 +17,10 @@ This package is not published to the npm registry — it's only available on Git
 
 ## Quick start
 
-Add it as a devDependency, pinned to a tag:
+Add it as a devDependency:
 
 ```bash
-pnpm add -D github:vasiliy-dudin/vuetify-tokens-extractor#v0.2.0
+pnpm add -D github:vasiliy-dudin/vuetify-tokens-extractor
 ```
 
 Then run it from the project whose Vuetify build you want to inspect (`cwd` is where `vuetify` gets resolved from):
@@ -28,6 +28,19 @@ Then run it from the project whose Vuetify build you want to inspect (`cwd` is w
 ```bash
 pnpm exec vuetify-tokens-extractor VBtn VChip
 pnpm exec vuetify-tokens-extractor --all
+```
+
+The theme is read from your app's own `createVuetify()` call — that file stays the single source of truth. With no flags the tool looks for a conventional source in the cwd and prints the one it picked; in a Vuetify monorepo that is `packages/docs/src/plugins/vuetify.ts`:
+
+```bash
+theme source auto-detected: packages/docs/src/plugins/vuetify.ts
+```
+
+Pass `--vuetify-options` to name it yourself, whether that is the app file or a config of your own:
+
+```bash
+pnpm exec vuetify-tokens-extractor --all --vuetify-options packages/docs/src/plugins/vuetify.ts
+pnpm exec vuetify-tokens-extractor --all --vuetify-options vuetify-tokens.config.ts
 ```
 
 Output is written to `style-tokens/` in that directory — one JSON per component, plus `_theme.json` with theme colours and variables.
@@ -61,56 +74,65 @@ Extra fields in each file:
 | `--out <dir>` | output folder (defaults to `style-tokens/` in the cwd) |
 | `--vuetify-root <path>` | use this vuetify install instead of resolving one from the cwd |
 | `--blueprint md1\|md2\|md3` | apply a blueprint when generating the theme |
-| `--vuetify-options <file>` | file with a default export of `createVuetify` options (theme, blueprint, defaults); `.mjs` / `.js` / `.ts` / `.mts` / `.cts`, TypeScript loaded via jiti |
+| `--vuetify-options <file>` | theme source: your app's own `createVuetify()` file, or a plain data module default-exporting `createVuetify` options. Overrides auto-detection. TypeScript is loaded via jiti |
 | `--theme-css <file>` | pre-built theme CSS instead of generating it in Node |
 | `--no-theme` | skip theming: `var` values stay unresolved, `propDefaults: null` |
 | `--full` | detailed format instead of compact |
 
-Without `--vuetify-options` or `--blueprint`, theme values come from Vuetify's own defaults (no blueprint, default light/dark themes). The tool then prints a warning to stderr and records `$meta.themeWarning` in every file it writes, because those values do not reflect your project's own `createVuetify()` config.
+When no theme source is given and none is auto-detected, theme values come from Vuetify's own defaults (no blueprint, default light/dark themes). The tool then prints a warning to stderr and records `$meta.themeWarning` in every file it writes, because those values do not reflect your project's own `createVuetify()` config.
 
 ## Where the theme data comes from
 
-Theme colours and interaction-state opacities (`--v-theme-*`, `--v-hover-opacity`, ...) aren't in the compiled CSS — Vuetify generates them at runtime from `createVuetify()` options. This tool reproduces that headlessly in Node (no browser) by importing the resolved `vuetify` package and calling `createVuetify()` with:
+Theme colours and interaction-state opacities (`--v-theme-*`, `--v-hover-opacity`, ...) aren't in the compiled CSS — Vuetify generates them at runtime from `createVuetify()` options. This tool reproduces that headlessly in Node, with no browser and no dev server.
 
-- nothing (defaults), or
-- `--blueprint <name>`, or
-- `--vuetify-options <file>` — a file that default-exports the same options object your app passes to `createVuetify()` (theme, blueprint, defaults), or
-- `--theme-css <file>` — a stylesheet you already captured (e.g. the contents of a running app's `<style id="vuetify-theme-stylesheet">` tag), which skips Node generation entirely.
+### Two shapes of theme source
 
-### Your app's Vuetify plugin file usually can't be passed directly
+`--vuetify-options` accepts either, and the tool tells them apart by what the module exports:
 
-`--vuetify-options` is imported in plain Node, and a typical `plugins/vuetify.ts` cannot be: it imports `vuetify/styles` and `vuetify/components/*` (CSS, which Node has no loader for), often pulls in other packages that do the same, may rely on bundler auto-imports (`h`, `camelize`), and frequently exports an install function rather than the options object.
-
-Extract the theme into a standalone data module, and point both your app and this tool at it:
+**Your app's own Vuetify file** — the one that calls `createVuetify()`. Nothing to keep in sync, because it *is* the app's configuration. The tool imports it with stylesheet imports replaced by empty modules and extensionless relative imports resolved, calls its exported install function with a stand-in Vue app, and takes the Vuetify instance that function installs.
 
 ```ts
-// src/plugins/theme.ts — no imports, no side effects
-export const theme = {
-  themes: {
-    light: { colors: { primary: '#3545E1' } },
-  },
+// packages/docs/src/plugins/vuetify.ts — untouched application code
+export function installVuetify (app: App) {
+  const vuetify = createVuetify({ blueprint: md3, theme: { themes: { light: { colors: { primary: '#3545E1' } } } } })
+  app.use(vuetify)
 }
 ```
 
-```ts
-// src/plugins/vuetify.ts
-import { theme } from './theme'
-
-createVuetify({ blueprint: md3, theme /* ... */ })
-```
+**A plain data module** default-exporting `createVuetify` options. Use it when the app file can't be loaded, or when the extracted theme should deliberately differ from the app's:
 
 ```ts
-// vuetify-tokens.config.ts, next to package.json
-import { theme } from './src/plugins/theme'
-
-export default { blueprint: 'md3', theme }
-```
-
-```bash
-pnpm exec vuetify-tokens-extractor VBtn --vuetify-options vuetify-tokens.config.ts
+// vuetify-tokens.config.ts
+export default {
+  blueprint: 'md3',
+  theme: { themes: { light: { colors: { primary: '#3545E1' } } } },
+}
 ```
 
 `blueprint` is a plain string here (`md1` / `md2` / `md3`) — the tool resolves it from the same Vuetify install the CSS came from, so the config needs no `vuetify/blueprints` import.
+
+### What gets detected when you pass nothing
+
+With no `--vuetify-options`, `--blueprint`, `--theme-css` or `--no-theme`, the first of these that exists in the cwd is used, and the choice is printed to stderr:
+
+1. `vuetify-tokens.config.ts` / `.mts` / `.mjs` / `.js`
+2. `packages/docs/src/plugins/vuetify.ts`
+3. `src/plugins/vuetify.ts`
+
+A dedicated config file therefore overrides the app file without touching application code. If none exists, the theme falls back to Vuetify's built-in defaults and the tool says so.
+
+### Requirements and limits for app files
+
+- Loading an app file needs **Node 22.15 or newer** (it uses `node:module` `registerHooks` to stub stylesheets). Plain data modules have no such floor. The error message says which case you hit.
+- The app file is **executed**, so it must be free of side effects beyond building Vuetify. Auto-imported globals (`h`, `camelize`) are fine as long as they are only used inside functions, not at module top level.
+- The module must either export exactly one function that installs Vuetify onto the app it is given, or export the created instance directly.
+- Theme changes made at runtime, after `createVuetify()`, are invisible here — see the limitations note in `CLAUDE.md`.
+
+### Other ways in
+
+- `--blueprint <name>` — Vuetify defaults plus a blueprint, ignoring any project config.
+- `--theme-css <file>` — a stylesheet you already captured (e.g. the contents of a running app's `<style id="vuetify-theme-stylesheet">` tag), which skips Node generation entirely.
+- `--no-theme` — no theme at all: `var()` references stay unresolved.
 
 ## Using it against a monorepo-style Vuetify checkout
 
@@ -122,7 +144,7 @@ pnpm exec vuetify-tokens-extractor VBtn --vuetify-root path/to/packages/vuetify
 
 ## Upgrading
 
-Pinning to a tag (as in [Quick start](#quick-start)) means upgrading is a version bump, not a manual copy: edit the `#v0.2.0` ref in `package.json` to the new tag, then reinstall:
+The dependency tracks the default branch, so upgrading is a reinstall:
 
 ```bash
 pnpm install
@@ -133,5 +155,6 @@ pnpm install
 1. `src/vuetify-root.mjs` — resolves the `vuetify` package location from the given `cwd` (or `--vuetify-root`).
 2. `src/components.mjs` — the component list and their CSS classes come from `<vuetify>/dist/json/importMap.json`.
 3. `src/parser.mjs` — CSS is parsed with postcss; rules are sorted into variants/sizes/states based on exact class-token matching (`v-btn` is never confused with `v-btn-group`).
-4. `src/theme.mjs` — the theme and prop defaults are generated in Node by calling `createVuetify(...)`, no browser required.
-5. `src/condense.mjs` / `src/serialize.mjs` — assembles the final JSON (compact or full), substituting theme values.
+4. `src/app-loader.mjs` — makes app source importable in Node (stylesheet imports stubbed, extensionless imports resolved) and pulls the Vuetify instance out of it.
+5. `src/theme.mjs` — the theme and prop defaults come from that instance, or from calling `createVuetify(...)` on a plain options module. No browser required.
+6. `src/condense.mjs` / `src/serialize.mjs` — assembles the final JSON (compact or full), substituting theme values.

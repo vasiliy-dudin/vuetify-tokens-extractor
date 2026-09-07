@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import postcss from 'postcss'
 import { pathToFileURL } from 'node:url'
+import { canLoadAppFiles, extractVuetifyInstance, registerAppHooks } from './app-loader.mjs'
 import { requireFromVuetify } from './vuetify-root.mjs'
 
 const BLUEPRINT_NAMES = ['md1', 'md2', 'md3']
@@ -45,14 +46,22 @@ async function importVuetify (vuetifyRoot) {
 
 const TS_EXTENSIONS = new Set(['.ts', '.mts', '.cts'])
 
-const OPTIONS_FILE_HINT =
-  'The options file must be plain data with no framework imports. Importing "vuetify/styles", ' +
-  '"vuetify/components/*" or "@vuetify/one", or relying on bundler auto-imports such as h() or camelize(), ' +
-  'cannot work here: Node has no Vite transform and no CSS loader. ' +
-  'Extract just the theme into a standalone data module and point this file at that.'
+const THEME_SOURCE_SHAPES =
+  'A theme source is either the app file that calls createVuetify() (stylesheet imports and ' +
+  'extensionless relative imports are handled for you), or a plain data module that default-exports ' +
+  'createVuetify options.'
 
-/** Imports a createVuetify options file. TypeScript goes through jiti, everything else through Node. */
-async function importOptionsFile (optionsFile) {
+const NO_APP_SUPPORT =
+  ' This Node build cannot load app files at all — node:module registerHooks needs Node 22.15 or newer — ' +
+  'so only plain data modules work here.'
+
+function themeSourceHint () {
+  return canLoadAppFiles() ? THEME_SOURCE_SHAPES : THEME_SOURCE_SHAPES + NO_APP_SUPPORT
+}
+
+/** Imports a theme source file. TypeScript goes through jiti, everything else through Node. */
+async function importThemeSource (optionsFile) {
+  registerAppHooks()
   const href = pathToFileURL(optionsFile).href
   if (!TS_EXTENSIONS.has(path.extname(optionsFile).toLowerCase())) {
     return await import(href)
@@ -63,7 +72,7 @@ async function importOptionsFile (optionsFile) {
     ({ createJiti } = await import('jiti'))
   } catch (error) {
     throw new Error(
-      `Cannot load the TypeScript options file ${optionsFile}: the "jiti" dependency is missing. ` +
+      `Cannot load the TypeScript theme source ${optionsFile}: the "jiti" dependency is missing. ` +
       'Reinstall the dependencies of this package, or pass a .mjs options file instead.\n' +
       `Original error: ${error.message}`
     )
@@ -73,17 +82,16 @@ async function importOptionsFile (optionsFile) {
     return await createJiti(import.meta.url).import(href)
   } catch (error) {
     throw new Error(
-      `Cannot load the options file ${optionsFile}.\n` + OPTIONS_FILE_HINT + '\n' +
+      `Cannot load the theme source ${optionsFile}.\n` + themeSourceHint() + '\n' +
       `Original error: ${error.message}`
     )
   }
 }
 
-async function loadOptions ({ blueprintName, optionsFile }) {
+function loadOptions ({ blueprintName, optionsFile, imported }) {
   let options = {}
   let source = DEFAULT_THEME_SOURCE
   if (optionsFile) {
-    const imported = await importOptionsFile(optionsFile)
     options = imported.default ?? imported
     source = `options:${optionsFile}`
   }
@@ -111,8 +119,13 @@ export async function generateTheme ({ vuetifyRoot, blueprintName, optionsFile, 
     }
   }
 
+  // An app file has already run createVuetify() itself; its instance is the finished theme.
+  const imported = optionsFile ? await importThemeSource(optionsFile) : null
+  const instance = imported ? extractVuetifyInstance(imported) : null
+  if (instance) return themeDataFromInstance(instance, `app:${optionsFile}`)
+
   const { vuetify, blueprints } = await importVuetify(vuetifyRoot)
-  const { options, source } = await loadOptions({ blueprintName, optionsFile })
+  const { options, source } = loadOptions({ blueprintName, optionsFile, imported })
 
   let blueprint = options.blueprint ?? null
   if (typeof blueprint === 'string') {
@@ -133,6 +146,21 @@ export async function generateTheme ({ vuetifyRoot, blueprintName, optionsFile, 
     themeVarsByName,
     defaults: app.defaults.value,
     defaultThemeName: typeof options.theme?.defaultTheme === 'string' ? options.theme.defaultTheme : 'light',
+  }
+}
+
+/**
+ * Theme data read off a live Vuetify instance built by the app itself.
+ * `blueprint` stays null: it is already merged into the themes and defaults reported here.
+ */
+function themeDataFromInstance (instance, source) {
+  return {
+    source,
+    blueprint: null,
+    themes: instance.theme.computedThemes.value,
+    themeVarsByName: parseThemeCss(instance.theme.styles.value),
+    defaults: instance.defaults.value,
+    defaultThemeName: instance.theme.name.value,
   }
 }
 

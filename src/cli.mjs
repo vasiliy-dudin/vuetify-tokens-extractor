@@ -30,6 +30,26 @@ function parseCliArgs (argv, cwd) {
   return { values, positionals }
 }
 
+// Conventional theme sources, most explicit first. A dedicated config file wins over the app's own
+// plugin file so a project can override what the tool reads without touching application code.
+const THEME_SOURCE_CANDIDATES = [
+  'vuetify-tokens.config.ts',
+  'vuetify-tokens.config.mts',
+  'vuetify-tokens.config.mjs',
+  'vuetify-tokens.config.js',
+  'packages/docs/src/plugins/vuetify.ts',
+  'src/plugins/vuetify.ts',
+]
+
+/** First conventional theme source present in the cwd, or null when none exists. */
+function discoverThemeSource (cwd) {
+  for (const candidate of THEME_SOURCE_CANDIDATES) {
+    const file = path.join(cwd, candidate)
+    if (fs.existsSync(file)) return file
+  }
+  return null
+}
+
 function defaultCssFiles (vuetifyRoot, components) {
   const files = [path.join(vuetifyRoot, 'dist', 'vuetify.css')]
   if (components.some(c => c.labs)) {
@@ -57,11 +77,19 @@ export async function run (argv, { cwd = process.cwd() } = {}) {
 
   let themeData = null
   if (!values['no-theme']) {
+    const explicitSource = values['vuetify-options'] && path.resolve(cwd, values['vuetify-options'])
+    const themeCssFile = values['theme-css'] && path.resolve(cwd, values['theme-css'])
+    // Only look for a conventional source when nothing about the theme was stated explicitly.
+    const discovered = (explicitSource || themeCssFile || values.blueprint) ? null : discoverThemeSource(cwd)
+    if (discovered) {
+      console.error('theme source auto-detected: ' + (path.relative(cwd, discovered) || discovered))
+    }
+
     themeData = await generateTheme({
       vuetifyRoot,
       blueprintName: values.blueprint,
-      optionsFile: values['vuetify-options'] && path.resolve(cwd, values['vuetify-options']),
-      themeCssFile: values['theme-css'] && path.resolve(cwd, values['theme-css']),
+      optionsFile: explicitSource || discovered,
+      themeCssFile,
     })
   }
   const themeVars = themeData
