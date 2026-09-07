@@ -6,13 +6,6 @@ Extracts Vuetify component styles (padding, radius, fonts, colours, sizes, state
 
 Run this from inside (or against) a project that has `vuetify` installed and built — the tool resolves the `vuetify` package via Node module resolution, the same way `import 'vuetify'` would from that project. `vuetify` is a `peerDependency` (`>=3.0.0`) of this package, not a bundled dependency: it always uses *your* installed version, never one it brings itself.
 
-**Build the `vuetify` package itself before running this tool — not your app.** The tool reads `<vuetify>/dist/vuetify.css` (and `dist/vuetify-labs.css`), which only exist after `vuetify`'s own build step has run. Building the app that *consumes* Vuetify does not refresh them: `vite build`, or `pnpm build docs` in the Vuetify monorepo, rebuilds the app and leaves `packages/vuetify/dist/` untouched. Without the right build the CSS is missing or stale, and extraction fails or produces incomplete output.
-
-| Where you're running it | What to build first |
-|---|---|
-| a Vuetify monorepo checkout | `pnpm --filter vuetify build` (equivalently `pnpm build dev`) |
-| a project using `vuetify` from npm | nothing — the published package ships a prebuilt `dist/` |
-
 This package is not published to the npm registry — it's only available on GitHub, and only tested with pnpm.
 
 ## Quick start
@@ -21,6 +14,16 @@ Add it as a devDependency:
 
 ```bash
 pnpm add -D github:vasiliy-dudin/vuetify-tokens-extractor
+```
+
+In a Vuetify monorepo checkout, build the `vuetify` package first:
+
+```bash
+pnpm build docs
+```
+or
+```bash
+pnpm --filter vuetify build
 ```
 
 Then run it from the project whose Vuetify build you want to inspect (`cwd` is where `vuetify` gets resolved from):
